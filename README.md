@@ -82,6 +82,12 @@ Host/Port lassen sich über *Neu konfigurieren* anpassen.
 - Registerquelle: VARTA Modbus-Tabelle (wie u. a. von
   [evcc](https://github.com/evcc-io/evcc) und `vartastorage` verwendet).
 
+## Icon
+
+Das Integrations-Icon liegt in `custom_components/varta_pulse_neo/brand/` und wird
+ab Home Assistant 2026.3 automatisch angezeigt. Es ist ein eigenes Motiv und kein
+offizielles VARTA-Logo.
+
 ## Entwicklung
 
 ```bash
