@@ -62,17 +62,28 @@ async def test_sensors(hass: HomeAssistant, fake_varta) -> None:
         assert state("sensor.varta_pulse_neo_state") == "charge"
         assert float(state("sensor.varta_pulse_neo_total_charged_energy")) == 87.672
         assert float(state("sensor.varta_pulse_neo_battery_energy_charged")) == 0
+        assert float(state("sensor.varta_pulse_neo_full_cycles")) == 13.49
+        assert state("sensor.varta_pulse_neo_round_trip_efficiency") == "unknown"
+        assert state("binary_sensor.varta_pulse_neo_problem") == "off"
 
         # 1500 W for 36 s -> 15 Wh
         later = dt_util.utcnow() + timedelta(seconds=36)
         with patch(
-            "custom_components.varta_pulse_neo.sensor.dt_util.utcnow",
+            "custom_components.varta_pulse_neo.coordinator.dt_util.utcnow",
             return_value=later,
         ):
             await entry.runtime_data.async_refresh()
         await hass.async_block_till_done()
         assert float(state("sensor.varta_pulse_neo_battery_energy_charged")) == 0.015
         assert float(state("sensor.varta_pulse_neo_grid_import_energy")) == 0.008
+
+        # error code reported -> problem
+        fake_varta.registers[1072] = 17
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        problem = hass.states.get("binary_sensor.varta_pulse_neo_problem")
+        assert problem.state == "on"
+        assert problem.attributes["error_code"] == 17
 
         # device goes away -> unavailable
         await fake_varta.stop()
@@ -102,4 +113,35 @@ async def test_options_flow(hass: HomeAssistant, fake_varta) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert entry.runtime_data.update_interval == timedelta(seconds=30)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_efficiency_and_persistence(hass: HomeAssistant, fake_varta) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="VARTA pulse neo",
+        unique_id="PN123456",
+        data={CONF_HOST: "127.0.0.1", CONF_PORT: fake_varta.port, CONF_UNIT_ID: 255},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    assert coordinator.soc_start == 57
+
+    # 10 kWh charged, 8.5 kWh discharged, SoC 57 % -> 67 % (+0.65 kWh stored)
+    coordinator.energy["battery_charged_energy"] = 10.0
+    coordinator.energy["battery_discharged_energy"] = 8.5
+    fake_varta.registers[1068] = 67
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    efficiency = hass.states.get("sensor.varta_pulse_neo_round_trip_efficiency")
+    assert float(efficiency.state) == 91.5
+
+    # counters survive a reload
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    assert coordinator.energy["battery_charged_energy"] >= 10.0
+    assert coordinator.soc_start == 57
     assert await hass.config_entries.async_unload(entry.entry_id)

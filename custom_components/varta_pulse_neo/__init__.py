@@ -11,12 +11,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.storage import Store
 
 from .api import VartaClient, VartaError
-from .const import CONF_UNIT_ID, DEFAULT_SCAN_INTERVAL, DEFAULT_UNIT_ID
-from .coordinator import VartaConfigEntry, VartaCoordinator
+from .const import CONF_UNIT_ID, DEFAULT_SCAN_INTERVAL, DEFAULT_UNIT_ID, DOMAIN
+from .coordinator import STORAGE_VERSION, VartaConfigEntry, VartaCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> bool:
@@ -39,6 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> boo
         device_info,
         entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
     )
+    await coordinator.async_load_counters()
     try:
         await coordinator.async_config_entry_first_refresh()
     except ConfigEntryNotReady:
@@ -62,8 +64,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> bo
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        await entry.runtime_data.async_save_counters()
         await entry.runtime_data.client.close()
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> None:
+    """Delete the stored energy counters when the entry is removed."""
+    await Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}").async_remove()
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: VartaConfigEntry) -> None:

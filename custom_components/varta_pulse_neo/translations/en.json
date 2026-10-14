@@ -113,6 +113,24 @@
           "passive": "Passive (service)",
           "islanding": "Islanding"
         }
+      },
+      "full_cycles": {
+        "name": "Full cycles"
+      },
+      "efficiency": {
+        "name": "Round-trip efficiency"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "state_attributes": {
+          "error_code": {
+            "name": "Error code"
+          },
+          "state": {
+            "name": "State"
+          }
+        }
       }
     }
   }

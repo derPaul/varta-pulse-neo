@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal
 
 from homeassistant.components.sensor import (
-    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -21,15 +18,13 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfPower,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .api import VartaData
-from .const import BATTERY_STATES, DOMAIN, MANUFACTURER, MODEL
-from .coordinator import VartaConfigEntry, VartaCoordinator
+from .const import BATTERY_STATES
+from .coordinator import ENERGY_COUNTERS, VartaConfigEntry, grid_power
+from .entity import VartaEntity
 
 PARALLEL_UPDATES = 0
 
@@ -41,9 +36,11 @@ class VartaSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[VartaData], int | float | str | None]
 
 
-def _grid_power(data: VartaData) -> int:
-    # The device reports feed-in as positive; Home Assistant uses import positive.
-    return -data.grid_power
+def _full_cycles(data: VartaData) -> float | None:
+    # Equivalent full cycles: total charged energy divided by the capacity.
+    if not data.installed_capacity:
+        return None
+    return round(data.total_charged_energy / data.installed_capacity, 2)
 
 
 SENSORS: tuple[VartaSensorEntityDescription, ...] = (
@@ -94,7 +91,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_grid_power,
+        value_fn=grid_power,
     ),
     VartaSensorEntityDescription(
         key="grid_import_power",
@@ -102,7 +99,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: max(_grid_power(d), 0),
+        value_fn=lambda d: max(grid_power(d), 0),
     ),
     VartaSensorEntityDescription(
         key="grid_export_power",
@@ -110,7 +107,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: max(-_grid_power(d), 0),
+        value_fn=lambda d: max(-grid_power(d), 0),
     ),
     VartaSensorEntityDescription(
         key="pv_sensor_power",
@@ -138,6 +135,13 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         value_fn=lambda d: d.total_charged_energy,
     ),
     VartaSensorEntityDescription(
+        key="full_cycles",
+        translation_key="full_cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=_full_cycles,
+    ),
+    VartaSensorEntityDescription(
         key="installed_capacity",
         translation_key="installed_capacity",
         device_class=SensorDeviceClass.ENERGY_STORAGE,
@@ -161,40 +165,25 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
 )
 
 
-@dataclass(frozen=True, kw_only=True)
-class VartaEnergySensorEntityDescription(SensorEntityDescription):
-    """Describes an energy counter integrated from a power value."""
-
-    power_fn: Callable[[VartaData], float]
-
-
-# The device has no import/export/discharge counters, so these are integrated
-# from the polled power values (trapezoidal rule) for the Energy dashboard.
-ENERGY_SENSORS: tuple[VartaEnergySensorEntityDescription, ...] = (
-    VartaEnergySensorEntityDescription(
-        key="battery_charged_energy",
-        translation_key="battery_charged_energy",
-        power_fn=lambda d: max(d.active_power, 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="battery_discharged_energy",
-        translation_key="battery_discharged_energy",
-        power_fn=lambda d: max(-d.active_power, 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="grid_import_energy",
-        translation_key="grid_import_energy",
-        power_fn=lambda d: max(_grid_power(d), 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="grid_export_energy",
-        translation_key="grid_export_energy",
-        power_fn=lambda d: max(-_grid_power(d), 0),
-    ),
+ENERGY_SENSORS: tuple[SensorEntityDescription, ...] = tuple(
+    SensorEntityDescription(
+        key=key,
+        translation_key=key,
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+    )
+    for key in ENERGY_COUNTERS
 )
 
-# Do not bridge gaps longer than this (e.g. device offline) with a straight line.
-MAX_INTEGRATION_GAP = 300  # seconds
+EFFICIENCY_SENSOR = SensorEntityDescription(
+    key="efficiency",
+    translation_key="efficiency",
+    native_unit_of_measurement=PERCENTAGE,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=1,
+)
 
 
 async def async_setup_entry(
@@ -210,32 +199,8 @@ async def async_setup_entry(
     entities.extend(
         VartaEnergySensor(coordinator, description) for description in ENERGY_SENSORS
     )
+    entities.append(VartaEfficiencySensor(coordinator, EFFICIENCY_SENSOR))
     async_add_entities(entities)
-
-
-class VartaEntity(CoordinatorEntity[VartaCoordinator]):
-    """Common base for VARTA entities."""
-
-    _attr_has_entity_name = True
-
-    def __init__(
-        self, coordinator: VartaCoordinator, description: SensorEntityDescription
-    ) -> None:
-        super().__init__(coordinator)
-        self.entity_description = description
-        entry = coordinator.config_entry
-        info = coordinator.device_info
-        identifier = entry.unique_id or entry.entry_id
-        self._attr_unique_id = f"{identifier}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, identifier)},
-            manufacturer=MANUFACTURER,
-            model=MODEL,
-            name=entry.title,
-            serial_number=info.serial or None,
-            sw_version=info.software_version_ems or None,
-            hw_version=info.software_version_inverter or None,
-        )
 
 
 class VartaSensor(VartaEntity, SensorEntity):
@@ -254,57 +219,20 @@ class VartaSensor(VartaEntity, SensorEntity):
         return super().available and self.native_value is not None
 
 
-class VartaEnergySensor(VartaEntity, RestoreSensor):
-    """Energy counter (kWh) integrated from a power value."""
-
-    entity_description: VartaEnergySensorEntityDescription
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_suggested_display_precision = 3
-
-    def __init__(
-        self,
-        coordinator: VartaCoordinator,
-        description: VartaEnergySensorEntityDescription,
-    ) -> None:
-        super().__init__(coordinator, description)
-        self._energy = Decimal(0)
-        self._last_power: float | None = None
-        self._last_time: datetime | None = None
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the last counter value."""
-        await super().async_added_to_hass()
-        if (last := await self.async_get_last_sensor_data()) is not None:
-            try:
-                self._energy = Decimal(str(last.native_value))
-            except ArithmeticError:
-                self._energy = Decimal(0)
-        self._integrate()
+class VartaEnergySensor(VartaEntity, SensorEntity):
+    """Energy counter (kWh) integrated from a power value by the coordinator."""
 
     @property
     def native_value(self) -> float:
         """Return the accumulated energy."""
-        return float(round(self._energy, 4))
+        return round(self.coordinator.energy[self.entity_description.key], 4)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._integrate()
-        super()._handle_coordinator_update()
 
-    @callback
-    def _integrate(self) -> None:
-        if not self.coordinator.last_update_success or self.coordinator.data is None:
-            self._last_power = None
-            self._last_time = None
-            return
-        now = dt_util.utcnow()
-        power = float(self.entity_description.power_fn(self.coordinator.data))
-        if self._last_power is not None and self._last_time is not None:
-            seconds = (now - self._last_time).total_seconds()
-            if 0 < seconds <= MAX_INTEGRATION_GAP:
-                wh = (self._last_power + power) / 2 * seconds / 3600
-                self._energy += Decimal(str(wh)) / 1000
-        self._last_power = power
-        self._last_time = now
+class VartaEfficiencySensor(VartaEntity, SensorEntity):
+    """Round-trip efficiency of the battery."""
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the efficiency in percent."""
+        value = self.coordinator.efficiency
+        return None if value is None else round(value, 2)

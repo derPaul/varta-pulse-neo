@@ -113,6 +113,24 @@
           "passive": "Passiv (Service)",
           "islanding": "Inselbetrieb"
         }
+      },
+      "full_cycles": {
+        "name": "Vollzyklen"
+      },
+      "efficiency": {
+        "name": "Wirkungsgrad"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "state_attributes": {
+          "error_code": {
+            "name": "Fehlercode"
+          },
+          "state": {
+            "name": "Status"
+          }
+        }
       }
     }
   }

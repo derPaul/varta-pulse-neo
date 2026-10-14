@@ -18,6 +18,9 @@ daher sollte die Integration auch mit diesen Geräten funktionieren.
 | Netzbezug / Netzeinspeisung | W | jeweils nur positive Werte |
 | Status | – | Startet, Bereit, Lädt, Entlädt, Standby, Fehler, Passiv, Inselbetrieb |
 | Gesamt geladene Energie | kWh | Zähler des Geräts |
+| Vollzyklen | – | gesamt geladene Energie ÷ installierte Kapazität |
+| Wirkungsgrad | % | entladene ÷ geladene Energie, korrigiert um die Änderung des Ladezustands; erst ab 1 kWh geladener Energie |
+| Problem | an/aus | an bei Fehlercode ≠ 0 oder Status „Fehler“ (Attribut `error_code`) |
 | Batterie geladen / entladen | kWh | in HA aus der Leistung integriert |
 | Netzbezug / Netzeinspeisung Energie | kWh | in HA aus der Leistung integriert |
 | Scheinleistung | VA | standardmäßig deaktiviert |
@@ -31,7 +34,8 @@ Seriennummer und Firmware-Versionen erscheinen in den Geräteinformationen.
 Der Speicher selbst liefert nur einen Zähler für die *geladene* Energie. Für das
 Energie-Dashboard berechnet die Integration deshalb vier Energiezähler
 (Batterie geladen/entladen, Netzbezug/-einspeisung) aus den abgefragten
-Leistungswerten (Trapezregel, Zählerstand bleibt über Neustarts erhalten).
+Leistungswerten (Trapezregel). Die Zählerstände werden in Home Assistant gespeichert
+und bleiben über Neustarts erhalten.
 Unter *Einstellungen → Dashboards → Energie* einfach eintragen:
 
 - **Netz:** „Netzbezug Energie“ und „Netzeinspeisung Energie“
