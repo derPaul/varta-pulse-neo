@@ -1,0 +1,12 @@
+{
+  "domain": "varta_pulse_neo",
+  "name": "VARTA pulse neo",
+  "codeowners": ["@derpaul"],
+  "config_flow": true,
+  "documentation": "https://github.com/derpaul/varta-pulse-neo",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/derpaul/varta-pulse-neo/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
