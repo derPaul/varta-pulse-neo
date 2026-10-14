@@ -1,0 +1,71 @@
+"""The VARTA pulse neo integration."""
+
+from __future__ import annotations
+
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    EVENT_HOMEASSISTANT_STOP,
+    Platform,
+)
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+
+from .api import VartaClient, VartaError
+from .const import CONF_UNIT_ID, DEFAULT_SCAN_INTERVAL, DEFAULT_UNIT_ID
+from .coordinator import VartaConfigEntry, VartaCoordinator
+
+PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> bool:
+    """Set up VARTA pulse neo from a config entry."""
+    client = VartaClient(
+        entry.data[CONF_HOST],
+        entry.data[CONF_PORT],
+        entry.data.get(CONF_UNIT_ID, DEFAULT_UNIT_ID),
+    )
+    try:
+        device_info = await client.read_device_info()
+    except VartaError as err:
+        await client.close()
+        raise ConfigEntryNotReady(str(err)) from err
+
+    coordinator = VartaCoordinator(
+        hass,
+        entry,
+        client,
+        device_info,
+        entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+    )
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        await client.close()
+        raise
+
+    entry.runtime_data = coordinator
+
+    async def _async_close(_event: Event) -> None:
+        await client.close()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_close)
+    )
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: VartaConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        await entry.runtime_data.client.close()
+    return unload_ok
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: VartaConfigEntry) -> None:
+    """Reload when the options change."""
+    await hass.config_entries.async_reload(entry.entry_id)

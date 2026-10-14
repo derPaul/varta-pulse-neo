@@ -1,0 +1,119 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "VARTA pulse neo",
+        "description": "Verbindung zum Speicher per Modbus TCP.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "unit_id": "Unit-ID"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des Speichers im lokalen Netz.",
+          "port": "Modbus-TCP-Port (Standard 502).",
+          "unit_id": "Modbus-Unit-ID (Standard 255)."
+        }
+      },
+      "reconfigure": {
+        "title": "VARTA pulse neo",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "unit_id": "Unit-ID"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des Speichers im lokalen Netz.",
+          "port": "Modbus-TCP-Port (Standard 502).",
+          "unit_id": "Modbus-Unit-ID (Standard 255)."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen. Ist Modbus TCP am Speicher aktiviert und die IP korrekt?",
+      "modbus_error": "Der Speicher hat die Modbus-Anfrage abgelehnt. Prüfe die Unit-ID."
+    },
+    "abort": {
+      "already_configured": "Dieser Speicher ist bereits eingerichtet.",
+      "reconfigure_successful": "Die Konfiguration wurde aktualisiert.",
+      "wrong_device": "Unter dieser Adresse antwortet ein anderer Speicher."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "soc": {
+        "name": "Ladezustand"
+      },
+      "battery_power": {
+        "name": "Batterieleistung"
+      },
+      "battery_charge_power": {
+        "name": "Ladeleistung"
+      },
+      "battery_discharge_power": {
+        "name": "Entladeleistung"
+      },
+      "apparent_power": {
+        "name": "Scheinleistung"
+      },
+      "grid_power": {
+        "name": "Netzleistung"
+      },
+      "grid_import_power": {
+        "name": "Netzbezug"
+      },
+      "grid_export_power": {
+        "name": "Netzeinspeisung"
+      },
+      "pv_sensor_power": {
+        "name": "PV-Sensor-Leistung"
+      },
+      "total_charged_energy": {
+        "name": "Gesamt geladene Energie"
+      },
+      "installed_capacity": {
+        "name": "Installierte Kapazität"
+      },
+      "number_modules": {
+        "name": "Anzahl Batteriemodule"
+      },
+      "error_code": {
+        "name": "Fehlercode"
+      },
+      "battery_charged_energy": {
+        "name": "Batterie geladen"
+      },
+      "battery_discharged_energy": {
+        "name": "Batterie entladen"
+      },
+      "grid_import_energy": {
+        "name": "Netzbezug Energie"
+      },
+      "grid_export_energy": {
+        "name": "Netzeinspeisung Energie"
+      },
+      "state": {
+        "name": "Status",
+        "state": {
+          "busy": "Startet",
+          "run": "Bereit",
+          "charge": "Lädt",
+          "discharge": "Entlädt",
+          "standby": "Standby",
+          "error": "Fehler",
+          "passive": "Passiv (Service)",
+          "islanding": "Inselbetrieb"
+        }
+      }
+    }
+  }
+}

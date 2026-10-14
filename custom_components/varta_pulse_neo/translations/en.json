@@ -1,0 +1,119 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "VARTA pulse neo",
+        "description": "Connect to the battery via Modbus TCP.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "unit_id": "Unit ID"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the battery in your local network.",
+          "port": "Modbus TCP port (default 502).",
+          "unit_id": "Modbus unit ID (default 255)."
+        }
+      },
+      "reconfigure": {
+        "title": "VARTA pulse neo",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "unit_id": "Unit ID"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the battery in your local network.",
+          "port": "Modbus TCP port (default 502).",
+          "unit_id": "Modbus unit ID (default 255)."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect. Is Modbus TCP enabled on the battery and the IP correct?",
+      "modbus_error": "The battery rejected the Modbus request. Check the unit ID."
+    },
+    "abort": {
+      "already_configured": "This battery is already configured.",
+      "reconfigure_successful": "Reconfiguration was successful.",
+      "wrong_device": "A different battery answers at this address."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "soc": {
+        "name": "State of charge"
+      },
+      "battery_power": {
+        "name": "Battery power"
+      },
+      "battery_charge_power": {
+        "name": "Charge power"
+      },
+      "battery_discharge_power": {
+        "name": "Discharge power"
+      },
+      "apparent_power": {
+        "name": "Apparent power"
+      },
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "grid_import_power": {
+        "name": "Grid import power"
+      },
+      "grid_export_power": {
+        "name": "Grid export power"
+      },
+      "pv_sensor_power": {
+        "name": "PV sensor power"
+      },
+      "total_charged_energy": {
+        "name": "Total charged energy"
+      },
+      "installed_capacity": {
+        "name": "Installed capacity"
+      },
+      "number_modules": {
+        "name": "Battery modules"
+      },
+      "error_code": {
+        "name": "Error code"
+      },
+      "battery_charged_energy": {
+        "name": "Battery energy charged"
+      },
+      "battery_discharged_energy": {
+        "name": "Battery energy discharged"
+      },
+      "grid_import_energy": {
+        "name": "Grid import energy"
+      },
+      "grid_export_energy": {
+        "name": "Grid export energy"
+      },
+      "state": {
+        "name": "State",
+        "state": {
+          "busy": "Busy",
+          "run": "Ready",
+          "charge": "Charging",
+          "discharge": "Discharging",
+          "standby": "Standby",
+          "error": "Error",
+          "passive": "Passive (service)",
+          "islanding": "Islanding"
+        }
+      }
+    }
+  }
+}
