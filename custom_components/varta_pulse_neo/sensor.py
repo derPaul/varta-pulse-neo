@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal
+from typing import Any
 
 from homeassistant.components.sensor import (
-    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -18,18 +16,22 @@ from homeassistant.const import (
     PERCENTAGE,
     EntityCategory,
     UnitOfApparentPower,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
+    UnitOfReactivePower,
+    UnitOfTemperature,
+    UnitOfTime,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .api import VartaData
-from .const import BATTERY_STATES, DOMAIN, MANUFACTURER, MODEL
-from .coordinator import VartaConfigEntry, VartaCoordinator
+from .const import BATTERY_STATES
+from .coordinator import ENERGY_COUNTERS, VartaConfigEntry, grid_power
+from .entity import VartaEntity
 
 PARALLEL_UPDATES = 0
 
@@ -41,9 +43,11 @@ class VartaSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[VartaData], int | float | str | None]
 
 
-def _grid_power(data: VartaData) -> int:
-    # The device reports feed-in as positive; Home Assistant uses import positive.
-    return -data.grid_power
+def _full_cycles(data: VartaData) -> float | None:
+    # Equivalent full cycles: total charged energy divided by the capacity.
+    if not data.installed_capacity:
+        return None
+    return round(data.total_charged_energy / data.installed_capacity, 2)
 
 
 SENSORS: tuple[VartaSensorEntityDescription, ...] = (
@@ -94,7 +98,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=_grid_power,
+        value_fn=grid_power,
     ),
     VartaSensorEntityDescription(
         key="grid_import_power",
@@ -102,7 +106,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: max(_grid_power(d), 0),
+        value_fn=lambda d: max(grid_power(d), 0),
     ),
     VartaSensorEntityDescription(
         key="grid_export_power",
@@ -110,7 +114,7 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: max(-_grid_power(d), 0),
+        value_fn=lambda d: max(-grid_power(d), 0),
     ),
     VartaSensorEntityDescription(
         key="pv_sensor_power",
@@ -138,6 +142,13 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
         value_fn=lambda d: d.total_charged_energy,
     ),
     VartaSensorEntityDescription(
+        key="full_cycles",
+        translation_key="full_cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=_full_cycles,
+    ),
+    VartaSensorEntityDescription(
         key="installed_capacity",
         translation_key="installed_capacity",
         device_class=SensorDeviceClass.ENERGY_STORAGE,
@@ -161,40 +172,271 @@ SENSORS: tuple[VartaSensorEntityDescription, ...] = (
 )
 
 
-@dataclass(frozen=True, kw_only=True)
-class VartaEnergySensorEntityDescription(SensorEntityDescription):
-    """Describes an energy counter integrated from a power value."""
-
-    power_fn: Callable[[VartaData], float]
-
-
-# The device has no import/export/discharge counters, so these are integrated
-# from the polled power values (trapezoidal rule) for the Energy dashboard.
-ENERGY_SENSORS: tuple[VartaEnergySensorEntityDescription, ...] = (
-    VartaEnergySensorEntityDescription(
-        key="battery_charged_energy",
-        translation_key="battery_charged_energy",
-        power_fn=lambda d: max(d.active_power, 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="battery_discharged_energy",
-        translation_key="battery_discharged_energy",
-        power_fn=lambda d: max(-d.active_power, 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="grid_import_energy",
-        translation_key="grid_import_energy",
-        power_fn=lambda d: max(_grid_power(d), 0),
-    ),
-    VartaEnergySensorEntityDescription(
-        key="grid_export_energy",
-        translation_key="grid_export_energy",
-        power_fn=lambda d: max(-_grid_power(d), 0),
-    ),
+ENERGY_SENSORS: tuple[SensorEntityDescription, ...] = tuple(
+    SensorEntityDescription(
+        key=key,
+        translation_key=key,
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+    )
+    for key in ENERGY_COUNTERS
 )
 
-# Do not bridge gaps longer than this (e.g. device offline) with a straight line.
-MAX_INTEGRATION_GAP = 300  # seconds
+EFFICIENCY_SENSOR = SensorEntityDescription(
+    key="efficiency",
+    translation_key="efficiency",
+    native_unit_of_measurement=PERCENTAGE,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=1,
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VartaWebSensorEntityDescription(SensorEntityDescription):
+    """Describes a sensor fed by the web interface (``/cgi/data``)."""
+
+    value_fn: Callable[[dict[str, Any]], float | int | None]
+
+
+def _proc(web: dict[str, Any], key: str) -> Any:
+    return web["procImg"][key]
+
+
+def _counter_kwh(key: str) -> Callable[[dict[str, Any]], float]:
+    return lambda web: round(web["procImg"]["counters"][key] / 3_600_000, 3)
+
+
+def _ratio(numerator: str, denominator: str) -> Callable[[dict[str, Any]], float]:
+    def value(web: dict[str, Any]) -> float:
+        counters = web["procImg"]["counters"]
+        return round(counters[numerator] / counters[denominator] * 100, 2)
+
+    return value
+
+
+def _web_energy(key: str, counter: str) -> VartaWebSensorEntityDescription:
+    return VartaWebSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        value_fn=_counter_kwh(counter),
+    )
+
+
+def _web_temperature(
+    key: str, fn: Callable[[dict[str, Any]], float], enabled: bool = True
+) -> VartaWebSensorEntityDescription:
+    return VartaWebSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=enabled,
+        value_fn=fn,
+    )
+
+
+def _phase_current(phase: int) -> VartaWebSensorEntityDescription:
+    return VartaWebSensorEntityDescription(
+        key=f"grid_current_l{phase}",
+        translation_key=f"grid_current_l{phase}",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda web: web["emeterAct"][f"iL{phase}ActiveGrid_cA"] / 100,
+    )
+
+
+def _cell_spread(web: dict[str, Any]) -> int:
+    bm = web["bmAct"]
+    return bm["maxCellVoltage_mV"] - bm["minCellVoltage_mV"]
+
+
+WEB_SENSORS: tuple[VartaWebSensorEntityDescription, ...] = (
+    # Energy counters of the device (Ws)
+    _web_energy("web_battery_charged_energy", "energyCounterBattIn_Ws"),
+    _web_energy("web_battery_discharged_energy", "energyCounterBattOut_Ws"),
+    _web_energy("web_ac_in_energy", "energyCounterAcIn_Ws"),
+    _web_energy("web_ac_out_energy", "energyCounterAcOut_Ws"),
+    _web_energy("web_grid_import_energy", "energyCounterHouseIn_Ws"),
+    _web_energy("web_grid_export_energy", "energyCounterHouseOut_Ws"),
+    VartaWebSensorEntityDescription(
+        key="web_efficiency_battery",
+        translation_key="web_efficiency_battery",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=_ratio("energyCounterBattOut_Ws", "energyCounterBattIn_Ws"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="web_efficiency_ac",
+        translation_key="web_efficiency_ac",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=_ratio("energyCounterAcOut_Ws", "energyCounterAcIn_Ws"),
+    ),
+    # Battery
+    VartaWebSensorEntityDescription(
+        key="state_of_health",
+        translation_key="state_of_health",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda web: _proc(web, "soh_pct"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="usable_capacity",
+        translation_key="usable_capacity",
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
+        native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+        suggested_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda web: round(_proc(web, "energyCapacity_Wh")),
+    ),
+    VartaWebSensorEntityDescription(
+        key="charge_cycles",
+        translation_key="charge_cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda web: _proc(web, "cycles"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="battery_voltage",
+        translation_key="battery_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda web: web["bmAct"]["batteryVoltage_cV"] / 100,
+    ),
+    VartaWebSensorEntityDescription(
+        key="cell_voltage_spread",
+        translation_key="cell_voltage_spread",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_cell_spread,
+    ),
+    VartaWebSensorEntityDescription(
+        key="cell_voltage_min",
+        translation_key="cell_voltage_min",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: web["bmAct"]["minCellVoltage_mV"],
+    ),
+    VartaWebSensorEntityDescription(
+        key="cell_voltage_max",
+        translation_key="cell_voltage_max",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.MILLIVOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: web["bmAct"]["maxCellVoltage_mV"],
+    ),
+    _web_temperature(
+        "battery_temperature", lambda web: web["bmAct"]["batteryTemp_dC"] / 10
+    ),
+    _web_temperature("inverter_temperature", lambda web: web["invAct"]["tempIgbtHb_C"]),
+    _web_temperature("ambient_temperature", lambda web: web["invAct"]["tempAmbient_C"]),
+    _web_temperature(
+        "dcdc_temperature", lambda web: web["dcdcAct"]["tempElectronic_C"], False
+    ),
+    _web_temperature("ems_temperature", lambda web: web["tempEms_dC"] / 10, False),
+    # Grid
+    VartaWebSensorEntityDescription(
+        key="grid_voltage",
+        translation_key="grid_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda web: _proc(web, "gridVoltage_V"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="grid_frequency",
+        translation_key="grid_frequency",
+        device_class=SensorDeviceClass.FREQUENCY,
+        native_unit_of_measurement=UnitOfFrequency.HERTZ,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda web: _proc(web, "gridFrequency_Hz"),
+    ),
+    _phase_current(1),
+    _phase_current(2),
+    _phase_current(3),
+    VartaWebSensorEntityDescription(
+        key="grid_reactive_power",
+        translation_key="grid_reactive_power",
+        device_class=SensorDeviceClass.REACTIVE_POWER,
+        native_unit_of_measurement=UnitOfReactivePower.VOLT_AMPERE_REACTIVE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: _proc(web, "gridReactivePower_W"),
+    ),
+    # Limits and statistics
+    VartaWebSensorEntityDescription(
+        key="max_charge_power",
+        translation_key="max_charge_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda web: _proc(web, "maxChargePower_W"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="max_discharge_power",
+        translation_key="max_discharge_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda web: _proc(web, "maxDischargePower_W"),
+    ),
+    VartaWebSensorEntityDescription(
+        key="fan_speed",
+        translation_key="fan_speed",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: web["invAct"]["fanSpd_dPct"] / 10,
+    ),
+    VartaWebSensorEntityDescription(
+        key="operating_time",
+        translation_key="operating_time",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: round(
+            web["procImg"]["counters"]["countActiveMinutes_m"] / 60, 1
+        ),
+    ),
+    VartaWebSensorEntityDescription(
+        key="system_starts",
+        translation_key="system_starts",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda web: web["procImg"]["counters"]["countNrOfSysStarts"],
+    ),
+)
 
 
 async def async_setup_entry(
@@ -210,32 +452,12 @@ async def async_setup_entry(
     entities.extend(
         VartaEnergySensor(coordinator, description) for description in ENERGY_SENSORS
     )
-    async_add_entities(entities)
-
-
-class VartaEntity(CoordinatorEntity[VartaCoordinator]):
-    """Common base for VARTA entities."""
-
-    _attr_has_entity_name = True
-
-    def __init__(
-        self, coordinator: VartaCoordinator, description: SensorEntityDescription
-    ) -> None:
-        super().__init__(coordinator)
-        self.entity_description = description
-        entry = coordinator.config_entry
-        info = coordinator.device_info
-        identifier = entry.unique_id or entry.entry_id
-        self._attr_unique_id = f"{identifier}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, identifier)},
-            manufacturer=MANUFACTURER,
-            model=MODEL,
-            name=entry.title,
-            serial_number=info.serial or None,
-            sw_version=info.software_version_ems or None,
-            hw_version=info.software_version_inverter or None,
+    entities.append(VartaEfficiencySensor(coordinator, EFFICIENCY_SENSOR))
+    if coordinator.web is not None:
+        entities.extend(
+            VartaWebSensor(coordinator, description) for description in WEB_SENSORS
         )
+    async_add_entities(entities)
 
 
 class VartaSensor(VartaEntity, SensorEntity):
@@ -254,57 +476,41 @@ class VartaSensor(VartaEntity, SensorEntity):
         return super().available and self.native_value is not None
 
 
-class VartaEnergySensor(VartaEntity, RestoreSensor):
-    """Energy counter (kWh) integrated from a power value."""
-
-    entity_description: VartaEnergySensorEntityDescription
-    _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_suggested_display_precision = 3
-
-    def __init__(
-        self,
-        coordinator: VartaCoordinator,
-        description: VartaEnergySensorEntityDescription,
-    ) -> None:
-        super().__init__(coordinator, description)
-        self._energy = Decimal(0)
-        self._last_power: float | None = None
-        self._last_time: datetime | None = None
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the last counter value."""
-        await super().async_added_to_hass()
-        if (last := await self.async_get_last_sensor_data()) is not None:
-            try:
-                self._energy = Decimal(str(last.native_value))
-            except ArithmeticError:
-                self._energy = Decimal(0)
-        self._integrate()
+class VartaEnergySensor(VartaEntity, SensorEntity):
+    """Energy counter (kWh) integrated from a power value by the coordinator."""
 
     @property
     def native_value(self) -> float:
         """Return the accumulated energy."""
-        return float(round(self._energy, 4))
+        return round(self.coordinator.energy[self.entity_description.key], 4)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._integrate()
-        super()._handle_coordinator_update()
 
-    @callback
-    def _integrate(self) -> None:
-        if not self.coordinator.last_update_success or self.coordinator.data is None:
-            self._last_power = None
-            self._last_time = None
-            return
-        now = dt_util.utcnow()
-        power = float(self.entity_description.power_fn(self.coordinator.data))
-        if self._last_power is not None and self._last_time is not None:
-            seconds = (now - self._last_time).total_seconds()
-            if 0 < seconds <= MAX_INTEGRATION_GAP:
-                wh = (self._last_power + power) / 2 * seconds / 3600
-                self._energy += Decimal(str(wh)) / 1000
-        self._last_power = power
-        self._last_time = now
+class VartaEfficiencySensor(VartaEntity, SensorEntity):
+    """Round-trip efficiency of the battery."""
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the efficiency in percent."""
+        value = self.coordinator.efficiency
+        return None if value is None else round(value, 2)
+
+
+class VartaWebSensor(VartaEntity, SensorEntity):
+    """A sensor reading a value from the web interface."""
+
+    entity_description: VartaWebSensorEntityDescription
+
+    @property
+    def native_value(self) -> float | int | None:
+        """Return the sensor value."""
+        if (web := self.coordinator.web_data) is None:
+            return None
+        try:
+            return self.entity_description.value_fn(web)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the web interface does not deliver the value."""
+        return super().available and self.native_value is not None

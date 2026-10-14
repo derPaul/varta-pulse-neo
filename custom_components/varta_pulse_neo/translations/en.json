@@ -7,12 +7,18 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "unit_id": "Unit ID"
+          "unit_id": "Unit ID",
+          "username": "Username (web interface)",
+          "password": "Password (web interface)",
+          "web_https": "Use HTTPS for the web interface"
         },
         "data_description": {
           "host": "IP address or hostname of the battery in your local network.",
           "port": "Modbus TCP port (default 502).",
-          "unit_id": "Modbus unit ID (default 255)."
+          "unit_id": "Modbus unit ID (default 255).",
+          "username": "Optional. The default customer account is \"user1\".",
+          "password": "Optional. Leave empty to use Modbus only. With a password, real energy counters, state of health, temperatures and grid values are added.",
+          "web_https": "Encrypted connection to the web interface (self-signed certificate)."
         }
       },
       "reconfigure": {
@@ -20,23 +26,41 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "unit_id": "Unit ID"
+          "unit_id": "Unit ID",
+          "username": "Username (web interface)",
+          "password": "Password (web interface)",
+          "web_https": "Use HTTPS for the web interface"
         },
         "data_description": {
           "host": "IP address or hostname of the battery in your local network.",
           "port": "Modbus TCP port (default 502).",
-          "unit_id": "Modbus unit ID (default 255)."
+          "unit_id": "Modbus unit ID (default 255).",
+          "username": "Optional. The default customer account is \"user1\".",
+          "password": "Optional. Leave empty to use Modbus only. With a password, real energy counters, state of health, temperatures and grid values are added.",
+          "web_https": "Encrypted connection to the web interface (self-signed certificate)."
+        }
+      },
+      "reauth_confirm": {
+        "title": "VARTA pulse neo",
+        "description": "The web interface rejected the stored credentials. Please enter them again.",
+        "data": {
+          "username": "Username (web interface)",
+          "password": "Password (web interface)"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect. Is Modbus TCP enabled on the battery and the IP correct?",
-      "modbus_error": "The battery rejected the Modbus request. Check the unit ID."
+      "modbus_error": "The battery rejected the Modbus request. Check the unit ID.",
+      "invalid_auth": "Invalid web interface username or password.",
+      "account_locked": "The web interface locked the account after too many failed attempts. Please try again later.",
+      "web_cannot_connect": "The web interface cannot be reached."
     },
     "abort": {
       "already_configured": "This battery is already configured.",
       "reconfigure_successful": "Reconfiguration was successful.",
-      "wrong_device": "A different battery answers at this address."
+      "wrong_device": "A different battery answers at this address.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {
@@ -113,6 +137,120 @@
           "passive": "Passive (service)",
           "islanding": "Islanding"
         }
+      },
+      "full_cycles": {
+        "name": "Full cycles"
+      },
+      "efficiency": {
+        "name": "Round-trip efficiency"
+      },
+      "web_battery_charged_energy": {
+        "name": "Battery charged (device counter)"
+      },
+      "web_battery_discharged_energy": {
+        "name": "Battery discharged (device counter)"
+      },
+      "web_ac_in_energy": {
+        "name": "Storage AC input"
+      },
+      "web_ac_out_energy": {
+        "name": "Storage AC output"
+      },
+      "web_grid_import_energy": {
+        "name": "Grid import (device counter)"
+      },
+      "web_grid_export_energy": {
+        "name": "Grid export (device counter)"
+      },
+      "web_efficiency_battery": {
+        "name": "Battery efficiency (DC)"
+      },
+      "web_efficiency_ac": {
+        "name": "Overall efficiency (AC)"
+      },
+      "state_of_health": {
+        "name": "State of health"
+      },
+      "usable_capacity": {
+        "name": "Usable capacity"
+      },
+      "charge_cycles": {
+        "name": "Charge cycles"
+      },
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "cell_voltage_spread": {
+        "name": "Cell voltage spread"
+      },
+      "cell_voltage_min": {
+        "name": "Minimum cell voltage"
+      },
+      "cell_voltage_max": {
+        "name": "Maximum cell voltage"
+      },
+      "battery_temperature": {
+        "name": "Battery temperature"
+      },
+      "inverter_temperature": {
+        "name": "Inverter temperature"
+      },
+      "ambient_temperature": {
+        "name": "Ambient temperature"
+      },
+      "dcdc_temperature": {
+        "name": "Charger temperature"
+      },
+      "ems_temperature": {
+        "name": "EMS temperature"
+      },
+      "grid_voltage": {
+        "name": "Grid voltage"
+      },
+      "grid_frequency": {
+        "name": "Grid frequency"
+      },
+      "grid_current_l1": {
+        "name": "Grid current L1"
+      },
+      "grid_current_l2": {
+        "name": "Grid current L2"
+      },
+      "grid_current_l3": {
+        "name": "Grid current L3"
+      },
+      "grid_reactive_power": {
+        "name": "Grid reactive power"
+      },
+      "max_charge_power": {
+        "name": "Maximum charge power"
+      },
+      "max_discharge_power": {
+        "name": "Maximum discharge power"
+      },
+      "fan_speed": {
+        "name": "Fan speed"
+      },
+      "operating_time": {
+        "name": "Operating time"
+      },
+      "system_starts": {
+        "name": "System starts"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "state_attributes": {
+          "error_code": {
+            "name": "Error code"
+          },
+          "state": {
+            "name": "State"
+          }
+        }
+      },
+      "backup_mode": {
+        "name": "Backup mode"
       }
     }
   }

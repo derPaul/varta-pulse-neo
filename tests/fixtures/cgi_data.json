@@ -1,0 +1,55 @@
+{
+ "common": {
+  "energyDay_Wh": 0,
+  "energyTotal_Wh": 0,
+  "power_W": 0
+ },
+ "pulse": {
+  "procImg": {
+   "backupMode": false,
+   "counters": {
+    "countActiveMinutes_m": 400503,
+    "countNrOfSysStarts": 1490,
+    "energyCounterAcIn_Ws": 6271438781,
+    "energyCounterAcOut_Ws": 5130760911,
+    "energyCounterBattIn_Ws": 5837963356,
+    "energyCounterBattOut_Ws": 5552368397,
+    "energyCounterHouseIn_Ws": 8576990223,
+    "energyCounterHouseOut_Ws": 18208368949,
+    "energyCounterPvOut_Ws": 0
+   },
+   "cycles": 264,
+   "energyCapacity_Wh": 5867.807000000001,
+   "errorCode": 0,
+   "gridFrequency_Hz": 50.050000000000004,
+   "gridPower_W": 3417,
+   "gridReactivePower_W": -301,
+   "gridVoltage_V": 230.20000000000002,
+   "maxChargePower_W": 0,
+   "maxDischargePower_W": 2500,
+   "soc_pct": 100,
+   "soh_pct": 95
+  },
+  "bmAct": {
+   "batteryTemp_dC": 331,
+   "batteryVoltage_cV": 5750,
+   "maxCellVoltage_mV": 4117,
+   "minCellVoltage_mV": 4087
+  },
+  "dcdcAct": {
+   "tempElectronic_C": 36
+  },
+  "emeterAct": {
+   "iL1ActiveGrid_cA": 506,
+   "iL2ActiveGrid_cA": 489,
+   "iL3ActiveGrid_cA": 491
+  },
+  "invAct": {
+   "fanSpd_dPct": 382,
+   "tempAmbient_C": 31,
+   "tempIgbtHb_C": 29
+  },
+  "tempEms_dC": 291
+ },
+ "link": {}
+}
