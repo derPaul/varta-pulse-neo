@@ -9,12 +9,14 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import VartaClient, VartaData, VartaDeviceInfo, VartaError
 from .const import DOMAIN
+from .web import VartaWebAuthError, VartaWebClient, VartaWebError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class VartaCoordinator(DataUpdateCoordinator[VartaData]):
         client: VartaClient,
         device_info: VartaDeviceInfo,
         scan_interval: int,
+        web: VartaWebClient | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -70,6 +73,11 @@ class VartaCoordinator(DataUpdateCoordinator[VartaData]):
         )
         self.client = client
         self.device_info = device_info
+        self.web = web
+        # Process image from the web interface (``None`` if not configured or
+        # currently not available).
+        self.web_data: dict[str, Any] | None = None
+        self._web_unavailable_logged = False
         self.energy: dict[str, float] = dict.fromkeys(ENERGY_COUNTERS, 0.0)
         # State of charge when the counters started; needed to correct the
         # efficiency for energy that is still stored in the battery.
@@ -103,7 +111,27 @@ class VartaCoordinator(DataUpdateCoordinator[VartaData]):
             self._last_time = None
             raise UpdateFailed(str(err)) from err
         self._integrate(data)
+        if self.web is not None:
+            await self._async_update_web()
         return data
+
+    async def _async_update_web(self) -> None:
+        assert self.web is not None
+        try:
+            self.web_data = await self.web.get_data()
+        except VartaWebAuthError as err:
+            # Do not retry: repeated failed logins lock the account.
+            self.web_data = None
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except VartaWebError as err:
+            self.web_data = None
+            if not self._web_unavailable_logged:
+                _LOGGER.warning("Web interface not available: %s", err)
+                self._web_unavailable_logged = True
+            return
+        if self._web_unavailable_logged:
+            _LOGGER.info("Web interface available again")
+            self._web_unavailable_logged = False
 
     def _integrate(self, data: VartaData) -> None:
         now = dt_util.utcnow()

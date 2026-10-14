@@ -29,6 +29,27 @@ daher sollte die Integration auch mit diesen Geräten funktionieren.
 
 Seriennummer und Firmware-Versionen erscheinen in den Geräteinformationen.
 
+### Zusätzlich mit Webinterface-Zugang (optional)
+
+Wird bei der Einrichtung das Passwort des Webinterfaces angegeben (Benutzer
+`user1`, siehe unten), liest die Integration zusätzlich `/cgi/data` aus:
+
+| Sensor | Hinweis |
+|---|---|
+| Batterie geladen / entladen (Gerätezähler) | echte Zähler des Speichers (DC), kWh |
+| Speicher AC-Aufnahme / AC-Abgabe | Energie, die der Speicher aus dem Hausnetz aufnimmt / abgibt |
+| Netzbezug / Netzeinspeisung (Gerätezähler) | Zähler des Netzsensors – bitte einmal mit dem Stromzähler vergleichen |
+| Wirkungsgrad Batterie (DC) / gesamt (AC) | aus den Gerätezählern |
+| Batteriegesundheit, nutzbare Kapazität, Ladezyklen | |
+| Batterie-, Wechselrichter-, Umgebungstemperatur | |
+| Batteriespannung, Zellspannungsdifferenz (min./max. Zellspannung) | Diagnose |
+| Netzspannung, Netzfrequenz, Netzstrom L1–L3, Blindleistung | |
+| Max. Lade-/Entladeleistung, Lüfter, Betriebsstunden, Systemstarts | Diagnose, teils deaktiviert |
+| Notstrombetrieb | an/aus |
+
+Für das Energie-Dashboard sind die Gerätezähler genauer als die aus der Leistung
+berechneten Zähler.
+
 ### Energie-Dashboard
 
 Der Speicher selbst liefert nur einen Zähler für die *geladene* Energie. Für das
@@ -74,13 +95,30 @@ Den Ordner `custom_components/varta_pulse_neo` nach
 | Port | 502 |
 | Unit-ID | 255 |
 
+| Benutzername (Webinterface) | `user1` (optional) |
+| Passwort (Webinterface) | leer = nur Modbus |
+| Webinterface über HTTPS | aus |
+
 Das Abfrageintervall (Standard 10 s) lässt sich danach über *Konfigurieren* ändern.
 Host/Port lassen sich über *Neu konfigurieren* anpassen.
 
+### Zugangsdaten für das Webinterface
+
+Laut Betriebsanleitung meldet man sich als Endkunde mit dem Benutzer `user1` an. Das
+Erstpasswort sind die ersten 6 Zeichen von „Code #1“ auf dem Cryptocode-Aufkleber am
+Gehäuse. Über „Passwort vergessen?“ lässt es sich mit dem vollständigen Code #1 (PUK)
+zurücksetzen.
+
+Lehnt der Speicher die Zugangsdaten ab, versucht die Integration es **nicht**
+wiederholt (sonst sperrt der Speicher den Zugang), sondern fordert in Home Assistant
+zur erneuten Eingabe auf.
+
 ## Hinweise
 
-- Die Integration liest nur – sie schreibt keine Register und verändert nichts am
-  Speicher.
+- Die Integration liest nur – sie schreibt keine Register und ändert keine
+  Einstellungen am Speicher.
+- Ohne HTTPS wird das Passwort des Webinterfaces unverschlüsselt im Heimnetz
+  übertragen. Den Speicher am besten nicht aus dem Internet erreichbar machen.
 - Viele VARTA-Geräte erlauben nur wenige gleichzeitige Modbus-Verbindungen. Wenn
   parallel z. B. evcc oder ioBroker abfragen, kann es zu Verbindungsfehlern kommen.
 - Registerquelle: VARTA Modbus-Tabelle (wie u. a. von

@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 import struct
+from unittest.mock import patch
 
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 import pytest
 
 
@@ -95,3 +100,72 @@ async def fake_varta(socket_enabled):
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable loading custom integrations in all tests."""
     yield
+
+
+class FakeVartaWeb:
+    """Serves the login and /cgi/data like the VARTA web interface."""
+
+    def __init__(self) -> None:
+        self.username = "user1"
+        self.password = "secret"
+        self.locked = False
+        self.logins = 0
+        self.sessions: set[str] = set()
+        self.data = json.loads(
+            (Path(__file__).parent / "fixtures/cgi_data.json").read_text()
+        )
+        self.server: TestServer | None = None
+
+    @property
+    def url(self) -> str:
+        assert self.server is not None
+        return str(self.server.make_url("/"))
+
+    async def start(self) -> None:
+        app = web.Application()
+        app.router.add_post("/cgi/login", self._login)
+        app.router.add_get("/cgi/data", self._data)
+        app.router.add_get("/cgi/logout", self._logout)
+        self.server = TestServer(app, host="127.0.0.1")
+        await self.server.start_server()
+
+    async def stop(self) -> None:
+        if self.server is not None:
+            await self.server.close()
+
+    async def _login(self, request: web.Request) -> web.Response:
+        self.logins += 1
+        if self.locked:
+            return web.Response(status=423)
+        form = await request.post()
+        if (
+            form.get("username") != self.username
+            or form.get("password") != self.password
+        ):
+            return web.Response(status=401)
+        session_id = f"s{self.logins}"
+        self.sessions.add(session_id)
+        response = web.Response(status=200)
+        response.set_cookie("beaker.session.id", session_id)
+        return response
+
+    async def _data(self, request: web.Request) -> web.Response:
+        if request.cookies.get("beaker.session.id") not in self.sessions:
+            return web.Response(status=403)
+        return web.json_response(self.data)
+
+    async def _logout(self, request: web.Request) -> web.Response:
+        self.sessions.discard(request.cookies.get("beaker.session.id", ""))
+        return web.Response(status=200)
+
+
+@pytest.fixture
+async def fake_web(socket_enabled):
+    server = FakeVartaWeb()
+    await server.start()
+    with patch(
+        "custom_components.varta_pulse_neo.web.web_base_url",
+        return_value=server.url,
+    ):
+        yield server
+    await server.stop()

@@ -7,12 +7,18 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "unit_id": "Unit-ID"
+          "unit_id": "Unit-ID",
+          "username": "Benutzername (Webinterface)",
+          "password": "Passwort (Webinterface)",
+          "web_https": "Webinterface über HTTPS"
         },
         "data_description": {
           "host": "IP-Adresse oder Hostname des Speichers im lokalen Netz.",
           "port": "Modbus-TCP-Port (Standard 502).",
-          "unit_id": "Modbus-Unit-ID (Standard 255)."
+          "unit_id": "Modbus-Unit-ID (Standard 255).",
+          "username": "Optional. Standard-Endkundenzugang ist „user1“.",
+          "password": "Optional. Leer lassen, um nur Modbus zu nutzen. Mit Passwort kommen echte Energiezähler, Batteriegesundheit, Temperaturen und Netzwerte dazu.",
+          "web_https": "Verschlüsselte Verbindung zum Webinterface (selbst signiertes Zertifikat)."
         }
       },
       "reconfigure": {
@@ -20,23 +26,41 @@
         "data": {
           "host": "Host",
           "port": "Port",
-          "unit_id": "Unit-ID"
+          "unit_id": "Unit-ID",
+          "username": "Benutzername (Webinterface)",
+          "password": "Passwort (Webinterface)",
+          "web_https": "Webinterface über HTTPS"
         },
         "data_description": {
           "host": "IP-Adresse oder Hostname des Speichers im lokalen Netz.",
           "port": "Modbus-TCP-Port (Standard 502).",
-          "unit_id": "Modbus-Unit-ID (Standard 255)."
+          "unit_id": "Modbus-Unit-ID (Standard 255).",
+          "username": "Optional. Standard-Endkundenzugang ist „user1“.",
+          "password": "Optional. Leer lassen, um nur Modbus zu nutzen. Mit Passwort kommen echte Energiezähler, Batteriegesundheit, Temperaturen und Netzwerte dazu.",
+          "web_https": "Verschlüsselte Verbindung zum Webinterface (selbst signiertes Zertifikat)."
+        }
+      },
+      "reauth_confirm": {
+        "title": "VARTA pulse neo",
+        "description": "Das Webinterface hat die gespeicherten Zugangsdaten abgelehnt. Bitte neu eingeben.",
+        "data": {
+          "username": "Benutzername (Webinterface)",
+          "password": "Passwort (Webinterface)"
         }
       }
     },
     "error": {
       "cannot_connect": "Verbindung fehlgeschlagen. Ist Modbus TCP am Speicher aktiviert und die IP korrekt?",
-      "modbus_error": "Der Speicher hat die Modbus-Anfrage abgelehnt. Prüfe die Unit-ID."
+      "modbus_error": "Der Speicher hat die Modbus-Anfrage abgelehnt. Prüfe die Unit-ID.",
+      "invalid_auth": "Benutzername oder Passwort des Webinterfaces ist falsch.",
+      "account_locked": "Das Webinterface hat den Zugang nach zu vielen Fehlversuchen gesperrt. Bitte später erneut versuchen.",
+      "web_cannot_connect": "Das Webinterface ist nicht erreichbar."
     },
     "abort": {
       "already_configured": "Dieser Speicher ist bereits eingerichtet.",
       "reconfigure_successful": "Die Konfiguration wurde aktualisiert.",
-      "wrong_device": "Unter dieser Adresse antwortet ein anderer Speicher."
+      "wrong_device": "Unter dieser Adresse antwortet ein anderer Speicher.",
+      "reauth_successful": "Die Zugangsdaten wurden aktualisiert."
     }
   },
   "options": {
@@ -119,6 +143,99 @@
       },
       "efficiency": {
         "name": "Wirkungsgrad"
+      },
+      "web_battery_charged_energy": {
+        "name": "Batterie geladen (Gerätezähler)"
+      },
+      "web_battery_discharged_energy": {
+        "name": "Batterie entladen (Gerätezähler)"
+      },
+      "web_ac_in_energy": {
+        "name": "Speicher AC-Aufnahme"
+      },
+      "web_ac_out_energy": {
+        "name": "Speicher AC-Abgabe"
+      },
+      "web_grid_import_energy": {
+        "name": "Netzbezug (Gerätezähler)"
+      },
+      "web_grid_export_energy": {
+        "name": "Netzeinspeisung (Gerätezähler)"
+      },
+      "web_efficiency_battery": {
+        "name": "Wirkungsgrad Batterie (DC)"
+      },
+      "web_efficiency_ac": {
+        "name": "Wirkungsgrad gesamt (AC)"
+      },
+      "state_of_health": {
+        "name": "Batteriegesundheit"
+      },
+      "usable_capacity": {
+        "name": "Nutzbare Kapazität"
+      },
+      "charge_cycles": {
+        "name": "Ladezyklen"
+      },
+      "battery_voltage": {
+        "name": "Batteriespannung"
+      },
+      "cell_voltage_spread": {
+        "name": "Zellspannungsdifferenz"
+      },
+      "cell_voltage_min": {
+        "name": "Minimale Zellspannung"
+      },
+      "cell_voltage_max": {
+        "name": "Maximale Zellspannung"
+      },
+      "battery_temperature": {
+        "name": "Batterietemperatur"
+      },
+      "inverter_temperature": {
+        "name": "Wechselrichtertemperatur"
+      },
+      "ambient_temperature": {
+        "name": "Umgebungstemperatur"
+      },
+      "dcdc_temperature": {
+        "name": "Ladegerättemperatur"
+      },
+      "ems_temperature": {
+        "name": "EMS-Temperatur"
+      },
+      "grid_voltage": {
+        "name": "Netzspannung"
+      },
+      "grid_frequency": {
+        "name": "Netzfrequenz"
+      },
+      "grid_current_l1": {
+        "name": "Netzstrom L1"
+      },
+      "grid_current_l2": {
+        "name": "Netzstrom L2"
+      },
+      "grid_current_l3": {
+        "name": "Netzstrom L3"
+      },
+      "grid_reactive_power": {
+        "name": "Netz-Blindleistung"
+      },
+      "max_charge_power": {
+        "name": "Maximale Ladeleistung"
+      },
+      "max_discharge_power": {
+        "name": "Maximale Entladeleistung"
+      },
+      "fan_speed": {
+        "name": "Lüfterdrehzahl"
+      },
+      "operating_time": {
+        "name": "Betriebsstunden"
+      },
+      "system_starts": {
+        "name": "Systemstarts"
       }
     },
     "binary_sensor": {
@@ -131,6 +248,9 @@
             "name": "Status"
           }
         }
+      },
+      "backup_mode": {
+        "name": "Notstrombetrieb"
       }
     }
   }
